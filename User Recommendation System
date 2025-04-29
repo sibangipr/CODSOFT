@@ -1,0 +1,67 @@
+import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# Sample user ratings (Collaborative filtering)
+ratings_dict = {
+    'user_id': [1, 1, 1, 2, 2, 3, 3],
+    'item_id': [101, 102, 103, 101, 104, 102, 105],
+    'rating':  [5, 3, 4, 4, 2, 5, 5]
+}
+
+# Sample item content data (Content-based filtering)
+items_dict = {
+    'item_id': [101, 102, 103, 104, 105],
+    'title': ['Inception', 'Harry Potter', 'Interstellar', 'Da Vinci Code', 'Imagine (Song)'],
+    'category': ['movie', 'book', 'movie', 'book', 'music'],
+    'description': [
+        'sci-fi thriller dream action',
+        'magic wizard fantasy novel',
+        'space time sci-fi drama',
+        'mystery thriller religion',
+        'legendary song by John Lennon'
+    ]
+}
+
+# Load into DataFrames
+ratings_df = pd.DataFrame(ratings_dict)
+items_df = pd.DataFrame(items_dict)
+
+# -------------------- Collaborative Filtering --------------------
+user_item_matrix = ratings_df.pivot(index='user_id', columns='item_id', values='rating').fillna(0)
+item_similarity = cosine_similarity(user_item_matrix.T)  # Item-Item similarity
+item_sim_df = pd.DataFrame(item_similarity, index=user_item_matrix.columns, columns=user_item_matrix.columns)
+
+# -------------------- Content-Based Filtering --------------------
+tfidf = TfidfVectorizer(stop_words='english')
+tfidf_matrix = tfidf.fit_transform(items_df['description'])
+content_sim_matrix = cosine_similarity(tfidf_matrix, tfidf_matrix)
+content_sim_df = pd.DataFrame(content_sim_matrix, index=items_df['item_id'], columns=items_df['item_id'])
+
+# -------------------- Hybrid Recommendation Function --------------------
+def recommend_items(user_id, top_n=5):
+    if user_id not in user_item_matrix.index:
+        print("New user! Showing popular items.")
+        return items_df.head(top_n)['title'].tolist()
+    
+    # Get items rated by user
+    user_ratings = user_item_matrix.loc[user_id]
+    rated_items = user_ratings[user_ratings > 0].index.tolist()
+    
+    # Collaborative Filtering score
+    cf_scores = item_sim_df[rated_items].mean(axis=1)
+
+    # Content-Based score
+    cb_scores = content_sim_df[rated_items].mean(axis=1)
+
+    # Hybrid score: combine with weights
+    hybrid_scores = (cf_scores + cb_scores) / 2
+    hybrid_scores = hybrid_scores.drop(index=rated_items)  # Don't recommend already rated
+
+    top_recommendations = hybrid_scores.sort_values(ascending=False).head(top_n).index
+    return items_df[items_df['item_id'].isin(top_recommendations)]['title'].tolist()
+
+# -------------------- Test the Recommender --------------------
+user_id = 1
+recommendations = recommend_items(user_id)
+print(f"Recommendations for User {user_id}:\n", recommendations)
